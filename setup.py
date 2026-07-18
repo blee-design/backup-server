@@ -15,7 +15,7 @@ if os.path.isfile(readme_path):
         long_description = f.read()
 
 setup(
-    name='backup-server',
+    name='moodle_backup_server_fox',
     version='1.0.0',
     description='Backup and restore system for Moodle exam and nrb servers',
     long_description=long_description,
