@@ -74,6 +74,8 @@ import threading
 import itertools
 import re
 
+PHP_BIN = 'php'
+
 # ----------------------------------------------------------------------
 # CONFIGURATION – CHANGE THESE VARIABLES TO MATCH YOUR SETUP
 # ----------------------------------------------------------------------
@@ -84,21 +86,21 @@ WEB_PARENT = '/var/www/html'
 
 SERVERS = {
     'psc': {
-        'web_root': '/var/www/html/psc-Server',
-        'data_dir': '/var/serverData/studyPSCData',
-        'db_name': 'psc',                       # fallback, overridden by config during restore
-        'config_file': '/var/www/html/psc-Server/config-psc.php',
+        'config_file': '/var/www/html/psc-Server/config.php',   # still hardcoded – we'll make it configurable later
         'symlink_name': 'psc',
-        'symlink_target': 'psc-Server/public'
+        'symlink_target': 'psc-Server/public',
     },
     'exam': {
-        'web_root': '/var/www/html/exam-Server',
-        'data_dir': '/var/serverData/examServerData',
-        'db_name': 'exam',
-        'config_file': '/var/www/html/exam-Server/config-exam.php',
+        'config_file': '/var/www/html/exam-Server/config.php',
         'symlink_name': 'exam',
-        'symlink_target': 'exam-Server/public'
+        'symlink_target': 'exam-Server/public',
     }
+}
+
+# You can override these with environment variables
+CONFIG_PATHS = {
+    'psc': os.environ.get('PSC_CONFIG', '/var/www/html/psc-Server/config.php'),
+    'exam': os.environ.get('EXAM_CONFIG', '/var/www/html/exam-Server/config.php'),
 }
 
 # Database character set and collation for new Moodle databases
@@ -116,7 +118,7 @@ WRITABLE_DIRS = [
 # ----------------------------------------------------------------------
 # HACKER-STYLE AESTHETICS
 # ----------------------------------------------------------------------
-_USE_COLOR = sys.stdout.isatty()
+_USE_COLOR = True
 
 MATRIX_GREEN = '\033[92m'
 BRIGHT_RED = '\033[91m'
@@ -128,6 +130,19 @@ WHITE = '\033[97m'
 RESET = '\033[0m'
 DIM = '\033[90m'
 BOLD = '\033[1m'
+# Extended color palette
+COLOR_RESET = '\033[0m'
+COLOR_GRAY = '\033[90m'
+COLOR_RED = '\033[91m'
+COLOR_GREEN = '\033[92m'
+COLOR_YELLOW = '\033[93m'
+COLOR_BLUE = '\033[94m'
+COLOR_MAGENTA = '\033[95m'
+COLOR_CYAN = '\033[96m'
+COLOR_WHITE = '\033[97m'
+COLOR_BOLD = '\033[1m'
+COLOR_DIM = '\033[2m'
+
 BLINK = '\033[5m' if _USE_COLOR else ''
 
 HACKER_PHRASES = [
@@ -140,6 +155,20 @@ HACKER_PHRASES = [
 
 ICONS = ['⟳', '⚡', '⧩', '⨀', '⨂', '↺', '➤', '⎈', '⌘', '⛭', '🔪', '💀', '👾', '🤖', '⚙️']
 
+# Rich icons per component
+ICON_MAP = {
+    'db': '🗄️',
+    'web': '🌐',
+    'data': '📁',
+    'config': '⚙️',
+    'tar': '📦',
+    'symlink': '🔗',
+    'permissions': '🔐',
+    'cron': '⏰',
+    'maintenance': '🔧',
+    'upgrade': '⬆️',
+}
+
 def matrix_intro():
     if not _USE_COLOR:
         print("Moodle Ninja Backup System v2.0")
@@ -151,49 +180,59 @@ def matrix_intro():
         time.sleep(0.03)
     time.sleep(0.2)
     banner = f"""
-{BRIGHT_RED}   ▄▄▄▄▄▄▄▄▄▄▄  ▄▄▄▄▄▄▄▄▄▄▄  ▄▄▄▄▄▄▄▄▄▄▄  ▄▄▄▄▄▄▄▄▄▄▄  ▄▄▄▄▄▄▄▄▄▄▄
-{BRIGHT_RED}  ▐░░░░░░░░░░░▌▐░░░░░░░░░░░▌▐░░░░░░░░░░░▌▐░░░░░░░░░░░▌▐░░░░░░░░░░░▌
-{BRIGHT_RED}  ▐░█▀▀▀▀▀▀▀█░▌▐░█▀▀▀▀▀▀▀█░▌▐░█▀▀▀▀▀▀▀█░▌▐░█▀▀▀▀▀▀▀▀▀ ▐░█▀▀▀▀▀▀▀█░▌
-{BRIGHT_RED}  ▐░▌       ▐░▌▐░▌       ▐░▌▐░▌       ▐░▌▐░▌          ▐░▌       ▐░▌
-{BRIGHT_RED}  ▐░█▄▄▄▄▄▄▄█░▌▐░█▄▄▄▄▄▄▄█░▌▐░█▄▄▄▄▄▄▄█░▌▐░▌          ▐░█▄▄▄▄▄▄▄█░▌
-{BRIGHT_RED}  ▐░░░░░░░░░░░▌▐░░░░░░░░░░░▌▐░░░░░░░░░░░▌▐░▌          ▐░░░░░░░░░░░▌
-{BRIGHT_RED}  ▐░█▀▀▀▀▀▀▀█░▌▐░█▀▀▀▀▀▀▀█░▌▐░█▀▀▀▀▀▀▀█░▌▐░▌          ▐░█▀▀▀▀▀▀▀█░▌
-{BRIGHT_RED}  ▐░▌       ▐░▌▐░▌       ▐░▌▐░▌       ▐░▌▐░▌          ▐░▌       ▐░▌
-{BRIGHT_RED}  ▐░█▄▄▄▄▄▄▄█░▌▐░█▄▄▄▄▄▄▄█░▌▐░█▄▄▄▄▄▄▄█░▌▐░█▄▄▄▄▄▄▄▄▄ ▐░█▄▄▄▄▄▄▄█░▌
-{BRIGHT_RED}  ▐░░░░░░░░░░░▌▐░░░░░░░░░░░▌▐░░░░░░░░░░░▌▐░░░░░░░░░░░▌▐░░░░░░░░░░░▌
-{BRIGHT_RED}   ▀▀▀▀▀▀▀▀▀▀▀  ▀▀▀▀▀▀▀▀▀▀▀  ▀▀▀▀▀▀▀▀▀▀▀  ▀▀▀▀▀▀▀▀▀▀▀  ▀▀▀▀▀▀▀▀▀▀▀
-{WHITE}{BOLD}           MOODLE NINJA BACKUP SYSTEM v2.0 – "We extract digital souls"{RESET}
-{BRIGHT_YELLOW}                      ▄▄▄▄▄   ▄▄▄   ▄▄▄▄▄   ▄▄▄▄▄   ▄▄▄   ▄▄▄▄▄
-{BRIGHT_YELLOW}                      █   █ █   █ █   █ █   █ █   █   █
-{BRIGHT_YELLOW}                      █   █ █   █ █   █ █   █ █   █   █
-{BRIGHT_YELLOW}                      █   █ █   █ █   █ █   █ █   █   █
-{BRIGHT_YELLOW}                      █   █ █   █ █   █ █   █ █   █   █
-{BRIGHT_YELLOW}                      █   █ █   █ █   █ █   █ █   █   █
-{BRIGHT_YELLOW}                      █▄▄▄█ █▄▄▄█ █▄▄▄█ █▄▄▄█ █▄▄▄█   █
-{RESET}
-    """
+    {BRIGHT_RED}   ▄▄▄▄▄▄▄▄▄▄▄  ▄▄▄▄▄▄▄▄▄▄▄  ▄▄▄▄▄▄▄▄▄▄▄  ▄▄▄▄▄▄▄▄▄▄▄  ▄▄▄▄▄▄▄▄▄▄▄
+    {BRIGHT_RED}  ▐░░░░░░░░░░░▌▐░░░░░░░░░░░▌▐░░░░░░░░░░░▌▐░░░░░░░░░░░▌▐░░░░░░░░░░░▌
+    {BRIGHT_RED}  ▐░█▀▀▀▀▀▀▀█░▌▐░█▀▀▀▀▀▀▀█░▌▐░█▀▀▀▀▀▀▀█░▌▐░█▀▀▀▀▀▀▀▀▀ ▐░█▀▀▀▀▀▀▀█░▌
+    {BRIGHT_RED}  ▐░▌       ▐░▌▐░▌       ▐░▌▐░▌       ▐░▌▐░▌          ▐░▌       ▐░▌
+    {BRIGHT_RED}  ▐░█▄▄▄▄▄▄▄█░▌▐░█▄▄▄▄▄▄▄█░▌▐░█▄▄▄▄▄▄▄█░▌▐░▌          ▐░█▄▄▄▄▄▄▄█░▌
+    {BRIGHT_RED}  ▐░░░░░░░░░░░▌▐░░░░░░░░░░░▌▐░░░░░░░░░░░▌▐░▌          ▐░░░░░░░░░░░▌
+    {BRIGHT_RED}  ▐░█▀▀▀▀▀▀▀█░▌▐░█▀▀▀▀▀▀▀█░▌▐░█▀▀▀▀▀▀▀█░▌▐░▌          ▐░█▀▀▀▀▀▀▀█░▌
+    {BRIGHT_RED}  ▐░▌       ▐░▌▐░▌       ▐░▌▐░▌       ▐░▌▐░▌          ▐░▌       ▐░▌
+    {BRIGHT_RED}  ▐░█▄▄▄▄▄▄▄█░▌▐░█▄▄▄▄▄▄▄█░▌▐░█▄▄▄▄▄▄▄█░▌▐░█▄▄▄▄▄▄▄▄▄ ▐░█▄▄▄▄▄▄▄█░▌
+    {BRIGHT_RED}  ▐░░░░░░░░░░░▌▐░░░░░░░░░░░▌▐░░░░░░░░░░░▌▐░░░░░░░░░░░▌▐░░░░░░░░░░░▌
+    {BRIGHT_RED}   ▀▀▀▀▀▀▀▀▀▀▀  ▀▀▀▀▀▀▀▀▀▀▀  ▀▀▀▀▀▀▀▀▀▀▀  ▀▀▀▀▀▀▀▀▀▀▀  ▀▀▀▀▀▀▀▀▀▀▀
+    {WHITE}{BOLD}           MOODLE NINJA BACKUP SYSTEM v2.0 – "We extract digital souls"{RESET}
+    {BRIGHT_YELLOW}                      ▄▄▄▄▄   ▄▄▄   ▄▄▄▄▄   ▄▄▄▄▄   ▄▄▄   ▄▄▄▄▄
+    {BRIGHT_YELLOW}                      █   █ █   █ █   █ █   █ █   █   █
+    {BRIGHT_YELLOW}                      █   █ █   █ █   █ █   █ █   █   █
+    {BRIGHT_YELLOW}                      █   █ █   █ █   █ █   █ █   █   █
+    {BRIGHT_YELLOW}                      █   █ █   █ █   █ █   █ █   █   █
+    {BRIGHT_YELLOW}                      █   █ █   █ █   █ █   █ █   █   █
+    {BRIGHT_YELLOW}                      █▄▄▄█ █▄▄▄█ █▄▄▄█ █▄▄▄█ █▄▄▄█   █
+    {RESET}
+        """
     print(banner)
     time.sleep(1)
     for _ in range(3):
         sys.stdout.write(f"{MATRIX_GREEN}>> INITIALIZING NEURAL INTERFACE... {RESET}\n")
         time.sleep(0.2)
-    print(f"{DIM}[ System ready. Type 'backup' or 'restore' to begin ]{RESET}\n")
+    # Updated line – list all subcommands
+    print(f"{DIM}[ System ready. Available: backup, restore, restore-previous, upgrade, maintenance, cron, status ]{RESET}\n")
 
 def spinner(message):
     if not _USE_COLOR:
         print(message)
         return
-    done = False
+    done = [False]   # use a mutable list so we can update it
     def spin():
         for c in itertools.cycle(['|', '/', '-', '\\']):
-            if done:
+            if done[0]:
                 break
             sys.stdout.write(f'\r{BRIGHT_CYAN}{c} {message}{RESET}')
             sys.stdout.flush()
             time.sleep(0.1)
     t = threading.Thread(target=spin)
+    t.daemon = True   # optional: allows thread to exit if main dies
     t.start()
-    return lambda: setattr(sys.modules[__name__], 'done', True) or t.join() or sys.stdout.write('\r' + ' ' * (len(message)+2) + '\r')
+
+    def stop():
+        done[0] = True
+        t.join()
+        # clear the spinner line
+        sys.stdout.write('\r' + ' ' * (len(message) + 2) + '\r')
+        sys.stdout.flush()
+
+    return stop
 
 def glitch_effect(text):
     if not _USE_COLOR:
@@ -232,15 +271,58 @@ def print_error(msg, file=sys.stderr):
 def print_prompt(msg):
     return input(f"{BRIGHT_MAGENTA}{BOLD}❯ {msg}{RESET} ")
 
-def print_verbose(msg):
+def print_verbose(msg, component=None, color=None, animated=False):
     if not _USE_COLOR:
         print(f"[VERBOSE] {msg}")
         return
-    icon = random.choice(ICONS)
-    colors = [BRIGHT_BLUE, BRIGHT_CYAN, BRIGHT_MAGENTA, MATRIX_GREEN]
-    color = random.choice(colors)
     timestamp = datetime.datetime.now().strftime("%H:%M:%S")
-    print(f"{DIM}[{timestamp}]{RESET} {color}{icon}{RESET} {msg}")
+    icon = ICON_MAP.get(component, random.choice(ICONS)) if component else random.choice(ICONS)
+    color = color or random.choice([COLOR_BLUE, COLOR_CYAN, COLOR_MAGENTA, COLOR_GREEN])
+    # Add a fun prefix
+    prefix = f"{COLOR_DIM}[{timestamp}]{COLOR_RESET} {color}{icon}{COLOR_RESET}"
+    if animated:
+        # Show a bouncing dot effect (simple)
+        dots = '.' * (random.randint(1, 3))
+        sys.stdout.write(f"\r{prefix} {msg}{dots}")
+    else:
+        sys.stdout.write(f"{prefix} {msg}\n")
+    sys.stdout.flush()
+
+def print_progress_bar(iteration, total, prefix='', suffix='', decimals=1, length=50, fill='█'):
+    """
+    Call in a loop to create terminal progress bar.
+    """
+    if not _USE_COLOR:
+        return
+    percent = ("{0:." + str(decimals) + "f}").format(100 * (iteration / float(total)))
+    filled_length = int(length * iteration // total)
+    bar = fill * filled_length + '-' * (length - filled_length)
+    sys.stdout.write(f'\r{COLOR_CYAN}{prefix}{COLOR_RESET} |{COLOR_GREEN}{bar}{COLOR_RESET}| {COLOR_WHITE}{percent}%{COLOR_RESET} {suffix}')
+    sys.stdout.flush()
+    if iteration == total:
+        print()  # newline at end
+
+def run_cmd_stream(cmd, verbose=False, **kwargs):
+    if verbose:
+        print_verbose(f"Executing: {' '.join(cmd)}", component='tar')
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            text=True, bufsize=1, **kwargs)
+    for line in proc.stdout:
+        # Colorize based on line content
+        if 'adding:' in line or 'restoring:' in line:
+            sys.stdout.write(f"{COLOR_GREEN}{line}{COLOR_RESET}")
+        elif 'skipping:' in line or 'warning:' in line:
+            sys.stdout.write(f"{COLOR_YELLOW}{line}{COLOR_RESET}")
+        elif 'error:' in line:
+            sys.stdout.write(f"{COLOR_RED}{line}{COLOR_RESET}")
+        else:
+            sys.stdout.write(f"{COLOR_WHITE}{line}{COLOR_RESET}")
+        sys.stdout.flush()
+    proc.wait()
+    if proc.returncode != 0:
+        print_error(f"Command failed: {' '.join(cmd)}")
+        sys.exit(1)
+    return proc
 
 # ----------------------------------------------------------------------
 # Helper functions
@@ -414,6 +496,53 @@ def handle_existing_database(db_name, auth_args, backup_dir, server_name, policy
     else:
         return True
 
+def get_table_prefix(server_name):
+    config_file = SERVERS[server_name]['config_file']
+    if not os.path.isfile(config_file):
+        return 'mdl_'  # fallback
+    with open(config_file, 'r') as f:
+        content = f.read()
+    match = re.search(r"\$CFG->prefix\s*=\s*['\"]([^'\"]+)['\"]\s*;", content)
+    if match:
+        return match.group(1)
+    return 'mdl_'
+
+def set_config_value(server_name, config_name, value, auth_args, verbose=False):
+    prefix = get_table_prefix(server_name)
+    db_name = SERVERS[server_name]['db_name']
+    client = get_db_client()
+    # Convert value to appropriate SQL type
+    if isinstance(value, bool):
+        sql_value = '1' if value else '0'
+    elif isinstance(value, str):
+        sql_value = f"'{value}'"
+    else:
+        sql_value = str(value)
+    # Use INSERT ... ON DUPLICATE KEY UPDATE
+    sql = f"""
+        INSERT INTO {prefix}config (name, value)
+        VALUES ('{config_name}', {sql_value})
+        ON DUPLICATE KEY UPDATE value = {sql_value}
+    """
+    cmd = [client] + auth_args + ['-e', sql, db_name]
+    run_cmd(cmd, verbose)
+
+def get_maintenance_settings(server_name, auth_args, verbose=False):
+    prefix = get_table_prefix(server_name)
+    db_name = SERVERS[server_name]['db_name']
+    client = get_db_client()
+    # Query relevant config values
+    sql = f"SELECT name, value FROM {prefix}config WHERE name IN ('maintenance_enabled', 'maintenance_message', 'maintenance_allow_admins')"
+    cmd = [client] + auth_args + ['-e', sql, db_name]
+    result = run_cmd(cmd, verbose, capture_output=True, text=True)
+    lines = result.stdout.strip().splitlines()
+    settings = {}
+    for line in lines[1:]:  # skip header
+        parts = line.split('\t')
+        if len(parts) == 2:
+            settings[parts[0]] = parts[1]
+    return settings
+
 # ----------------------------------------------------------------------
 # Extract database credentials from Moodle config file - IMPROVED REGEX
 # ----------------------------------------------------------------------
@@ -489,6 +618,148 @@ def grant_database_privileges(db_name, db_user, db_pass, auth_args, verbose=Fals
     flush_cmd = [client] + auth_args + ['-e', "FLUSH PRIVILEGES"]
     run_cmd(flush_cmd, verbose, check=True)
     print_success(f"Database privileges granted: {db_user}@localhost on database {db_name}")
+
+def get_moodle_root(server_name):
+    """Return the full path to the Moodle web root for a given server."""
+    return SERVERS[server_name]['web_root']
+
+def run_moodle_cli(server_name, script, args=None, verbose=False):
+    """
+    Execute a Moodle CLI script with optional arguments.
+    script: e.g., 'maintenance.php', 'upgrade.php', 'cron.php'
+    args: list of strings (e.g., ['--enable'])
+    Returns subprocess result.
+    """
+    web_root = get_moodle_root(server_name)
+    if not os.path.isdir(web_root):
+        print_error(f"Web root {web_root} does not exist for {server_name}")
+        sys.exit(1)
+    cli_script = os.path.join(web_root, 'admin', 'cli', script)
+    if not os.path.isfile(cli_script):
+        print_error(f"CLI script {cli_script} not found")
+        sys.exit(1)
+    cmd = ['php', cli_script]
+    if args:
+        cmd.extend(args)
+    # Run with real-time output if verbose
+    if verbose:
+        return run_cmd_stream(cmd, verbose)
+    else:
+        return run_cmd(cmd, verbose, check=False)  # we'll handle errors
+
+def get_moodle_version(server_name):
+    version_file = os.path.join(get_moodle_root(server_name), 'version.php')
+    if not os.path.isfile(version_file):
+        return None, None
+    with open(version_file, 'r') as f:
+        content = f.read()
+    # Look for $branch = '...'; and $release = '...';
+    branch_match = re.search(r'\$branch\s*=\s*[\'"]([^\'"]+)[\'"]\s*;', content)
+    release_match = re.search(r'\$release\s*=\s*[\'"]([^\'"]+)[\'"]\s*;', content)
+    branch = branch_match.group(1) if branch_match else None
+    release = release_match.group(1) if release_match else None
+    return branch, release
+
+def update_moodle_code(server_name, method='git-pull', verbose=False):
+    web_root = get_moodle_root(server_name)
+    if not os.path.isdir(os.path.join(web_root, '.git')):
+        print_error(f"{web_root} is not a git repository.")
+        sys.exit(1)
+
+    if method == 'git-pull':
+        # Check if shallow
+        is_shallow = os.path.exists(os.path.join(web_root, '.git', 'shallow'))
+        if is_shallow:
+            print_info("Shallow clone detected. Unshallowing...")
+            run_cmd(['git', '-C', web_root, 'fetch', '--unshallow'], verbose)
+        # Now pull (preserves untracked files)
+        run_cmd(['git', '-C', web_root, 'pull', '--ff-only'], verbose)
+
+    elif method == 'git-fetch-reset':
+        # This is dangerous – only use if you're SURE you want to wipe local changes
+        print_warning("This will remove any untracked files (plugins may be lost!).")
+        if not print_prompt("Continue? (y/N): ").lower().startswith('y'):
+            return
+        run_cmd(['git', '-C', web_root, 'fetch', '--depth=1', 'origin', 'MOODLE_502_STABLE'], verbose)
+        run_cmd(['git', '-C', web_root, 'reset', '--hard', 'origin/MOODLE_502_STABLE'], verbose)
+
+    elif method == 'tarball':
+        # Using tarball is safe because it overwrites only core files – plugins remain
+        url = 'https://github.com/moodle/moodle/archive/MOODLE_502_STABLE.tar.gz'
+        import tempfile, urllib.request
+        with tempfile.NamedTemporaryFile(suffix='.tar.gz') as tmp:
+            print_info(f"Downloading {url}...")
+            urllib.request.urlretrieve(url, tmp.name)
+            print_info("Extracting...")
+            run_cmd(['tar', '-xzf', tmp.name, '-C', os.path.dirname(web_root),
+                     '--strip-components=1', '--skip-old-files'], verbose)
+            # `--skip-old-files` prevents overwriting existing plugin files
+        # Alternatively, use `--overwrite` for core files, but that's riskier
+
+    else:
+        print_error(f"Unknown method: {method}")
+        sys.exit(1)
+
+def upgrade_moodle(server_name, check_only=False, verbose=False):
+    """
+    Run Moodle upgrade.
+    If check_only=True, just check if upgrade is needed (exit code 0 = no upgrade, 1 = upgrade needed).
+    """
+    args = ['--non-interactive']
+    if check_only:
+        args.append('--check')
+    result = run_moodle_cli(server_name, 'upgrade.php', args, verbose)
+    return result.returncode
+
+def set_maintenance(server_name, enable=True, verbose=False):
+    mode = '--enable' if enable else '--disable'
+    return run_moodle_cli(server_name, 'maintenance.php', [mode], verbose)
+
+def run_cron(server_name, verbose=False):
+    return run_moodle_cli(server_name, 'cron.php', verbose=verbose)
+
+def setup_cron(server_name, schedule='* * * * *', user='www-data', verbose=False):
+    """Add a cron job for the given server to the system crontab."""
+    cmd = ['php', os.path.join(get_moodle_root(server_name), 'admin', 'cli', 'cron.php')]
+    cron_line = f"{schedule} {user} {' '.join(cmd)}"
+    # Use crontab -u root -l to check and add
+    # We'll implement a helper to manage crontab entries.
+
+def setup_cron_job(server_name, schedule='* * * * *', verbose=False):
+    """Add a cron job for the given server to root's crontab."""
+    cron_cmd = f"{PHP_BIN} {os.path.join(get_moodle_root(server_name), 'admin', 'cli', 'cron.php')}"
+    cron_line = f"{schedule} root {cron_cmd} > /dev/null 2>&1"
+    # Get current crontab
+    crontab = subprocess.run(['crontab', '-l'], capture_output=True, text=True)
+    if crontab.returncode == 0 and cron_cmd in crontab.stdout:
+        print_info("Cron job already exists; updating.")
+    # Remove any existing line for this server to avoid duplicates
+    lines = crontab.stdout.splitlines() if crontab.returncode == 0 else []
+    filtered = [line for line in lines if cron_cmd not in line]
+    filtered.append(cron_line)
+    final = '\n'.join(filtered) + '\n'
+    proc = subprocess.run(['crontab', '-'], input=final, text=True)
+    if proc.returncode == 0:
+        print_success(f"Cron job installed with schedule: {schedule}")
+    else:
+        print_error("Failed to install cron job.")
+    return proc.returncode
+
+def show_status(server_name, verbose=False):
+    branch, release = get_moodle_version(server_name)
+    cfg = load_server_config(server_name)
+    print_info(f"Server: {server_name}")
+    print(f"  Web root: {cfg['web_root']}")
+    print(f"  Data dir: {cfg['data_dir']}")
+    print(f"  Database: {cfg['db_name']}")
+    print(f"  Branch: {branch or 'unknown'}")
+    print(f"  Release: {release or 'unknown'}")
+    # Check maintenance mode via CLI (optional)
+    result = run_moodle_cli(server_name, 'maintenance.php', ['--status'], verbose=False)
+    if result.returncode == 0 and result.stdout:
+        print(f"  Maintenance: {result.stdout.strip()}")
+    else:
+        print("  Maintenance: unknown (try 'maintenance --status')")
 
 # ----------------------------------------------------------------------
 # File permission management after restore – only fix if needed
@@ -631,11 +902,12 @@ def backup(backup_location, verbose):
 
     try:
         for server_name, cfg in SERVERS.items():
+            server_cfg = load_server_config(server_name)   # <-- load dynamic config
             print_info(f"Harvesting server: {server_name}")
             server_dir = os.path.join(temp_dir, server_name)
             os.makedirs(server_dir, exist_ok=True)
 
-            # Config file
+            # Config file (still from SERVERS)
             cfg_src = cfg['config_file']
             cfg_dst = os.path.join(server_dir, f"config-{server_name}.php")
             if os.path.exists(cfg_src):
@@ -647,15 +919,21 @@ def backup(backup_location, verbose):
             else:
                 print_warning(f"Config file {cfg_src} not found, skipping.")
 
-            # Database dump
+            # Database dump – use server_cfg
             print_info("Dumping database...")
             db_dump = os.path.join(server_dir, 'db.sql')
-            current_auth = ensure_db_access(cfg['db_name'])
-            dump_cmd = [get_db_dump()] + current_auth + ['--default-character-set=utf8mb4', cfg['db_name']]
-            with open(db_dump, 'wb') as f:
-                run_cmd(dump_cmd, verbose, stdout=f)
+            current_auth = ensure_db_access(server_cfg['db_name'])
+            dump_cmd = [get_db_dump()] + current_auth + ['--default-character-set=utf8mb4', server_cfg['db_name']]
+
+            stop = spinner("Dumping database...")
+            try:
+                with open(db_dump, 'wb') as f:
+                    subprocess.run(dump_cmd, stdout=f, check=True)   # <-- fixed typo
+            finally:
+                stop()
+
             if verbose:
-                print_verbose(f"Database '{cfg['db_name']}' dumped to {db_dump}")
+                print_verbose(f"Database '{server_cfg['db_name']}' dumped to {db_dump}")
             else:
                 print_info("Database extracted.")
 
@@ -666,8 +944,9 @@ def backup(backup_location, verbose):
                 else:
                     print_info(f"Web root for {SECONDARY_SERVER} omitted (clone on restore).")
             else:
+                print_verbose(random.choice(HACKER_PHRASES), component='web')
                 print_info("Copying web root...")
-                web_src = cfg['web_root']
+                web_src = server_cfg['web_root']
                 web_dst = os.path.join(server_dir, 'html')
                 if os.path.exists(web_src):
                     run_cmd(['cp', '-a', '--reflink=auto', web_src, web_dst], verbose)
@@ -680,7 +959,7 @@ def backup(backup_location, verbose):
 
             # Data directory
             print_info("Copying data directory...")
-            data_src = cfg['data_dir']
+            data_src = server_cfg['data_dir']
             data_dst = os.path.join(server_dir, 'data')
             if os.path.exists(data_src):
                 run_cmd(['cp', '-a', '--reflink=auto', data_src, data_dst], verbose)
@@ -697,7 +976,10 @@ def backup(backup_location, verbose):
         else:
             archive_name = get_default_backup_path()
         print_info("Compressing payload...")
-        run_cmd(['tar', '-C', temp_dir, '-cJf', archive_name, '.'], verbose)
+        if verbose:
+            run_cmd_stream(['tar', '-C', temp_dir, '-cJvf', archive_name, '.'], verbose)
+        else:
+            run_cmd(['tar', '-C', temp_dir, '-cJf', archive_name, '.'], verbose)
         print_success(f"Backup successfully created: {archive_name}")
 
     finally:
@@ -808,6 +1090,43 @@ def get_conflict_policy(verbose):
         print_verbose(f"Conflict resolution policy: {policy}")
     return policy
 
+def load_server_config(server_name):
+    """Return a dict with all Moodle config values from config.php."""
+    cfg = SERVERS[server_name]
+    config_path = cfg['config_file']
+    if not os.path.isfile(config_path):
+        print_error(f"Config file {config_path} not found for {server_name}")
+        sys.exit(1)
+    with open(config_path, 'r') as f:
+        content = f.read()
+
+    # Extract variables
+    def get_var(name):
+        pattern = r'\$CFG->' + re.escape(name) + r'\s*=\s*([\'"])([^\'"]+)\1\s*;'
+        m = re.search(pattern, content)
+        return m.group(2) if m else None
+
+    dataroot = get_var('dataroot') or '/var/serverData/default'
+    dbname   = get_var('dbname') or server_name
+    dbuser   = get_var('dbuser') or ''
+    dbpass   = get_var('dbpass') or ''
+    prefix   = get_var('prefix') or 'mdl_'
+    wwwroot  = get_var('wwwroot') or ''
+
+    # Derive web_root from config file location (the directory containing config.php)
+    web_root = os.path.dirname(config_path)
+
+    return {
+        'web_root': web_root,
+        'data_dir': dataroot,
+        'db_name': dbname,
+        'db_user': dbuser,
+        'db_pass': dbpass,
+        'table_prefix': prefix,
+        'wwwroot': wwwroot,
+        'config_file': config_path,
+    }
+
 # ----------------------------------------------------------------------
 # Restore main function
 # ----------------------------------------------------------------------
@@ -863,15 +1182,19 @@ def restore(restore_location, verbose):
         return auth_args
 
     try:
-        run_cmd(['tar', '-C', temp_dir, '-xJf', restore_location], verbose)
+        if verbose:
+            run_cmd_stream(['tar', '-C', temp_dir, '-xJvf', restore_location], verbose)
+        else:
+            run_cmd(['tar', '-C', temp_dir, '-xJf', restore_location], verbose)
         if verbose:
             print_verbose("Extraction complete.")
 
         ensure_server_access()
         policy = get_conflict_policy(verbose)
 
-        # --- Primary server restore ---
-        primary_cfg = SERVERS[PRIMARY_SERVER]
+        # ========== PRIMARY SERVER RESTORE ==========
+        primary_info = SERVERS[PRIMARY_SERVER]                 # for symlink name/target
+        primary_cfg = load_server_config(PRIMARY_SERVER)       # full dynamic config
         server_backup = os.path.join(temp_dir, PRIMARY_SERVER)
         if not os.path.isdir(server_backup):
             print_error(f"Primary server '{PRIMARY_SERVER}' backup not found.")
@@ -971,20 +1294,20 @@ def restore(restore_location, verbose):
             print_warning("Database dump for primary not found, skipping.")
 
         # Primary symlink
-        link_name = os.path.join(WEB_PARENT, primary_cfg['symlink_name'])
-        link_target = primary_cfg['symlink_target']
+        link_name = os.path.join(WEB_PARENT, primary_info['symlink_name'])
+        link_target = primary_info['symlink_target']
         if os.path.lexists(link_name):
             os.unlink(link_name)
         os.symlink(link_target, link_name)
         if verbose:
             print_verbose(f"Symlink created: {link_name} -> {link_target}")
 
-        # --- Secondary (exam) server restore ---
-        exam_cfg = SERVERS[SECONDARY_SERVER]
+        # ========== SECONDARY (EXAM) SERVER RESTORE ==========
+        exam_info = SERVERS[SECONDARY_SERVER]
+        exam_cfg = load_server_config(SECONDARY_SERVER)
         server_backup_exam = os.path.join(temp_dir, SECONDARY_SERVER)
         if not os.path.isdir(server_backup_exam):
             print_warning(f"Exam server backup not found, will try to clone from primary and restore config from backup if available.")
-            # Still create empty directories if needed
             os.makedirs(exam_cfg['web_root'], exist_ok=True)
             os.makedirs(exam_cfg['data_dir'], exist_ok=True)
 
@@ -1005,7 +1328,6 @@ def restore(restore_location, verbose):
                 restored_web_roots[SECONDARY_SERVER] = web_target_exam
             else:
                 print_warning("Exam web root cloning skipped – will attempt to restore from backup.")
-                # Fallback: restore from backup if exists
                 web_backup_exam = os.path.join(server_backup_exam, 'html')
                 if os.path.isdir(web_backup_exam):
                     if handle_existing(SECONDARY_SERVER, 'html', web_target_exam, is_dir=True,
@@ -1029,11 +1351,9 @@ def restore(restore_location, verbose):
             else:
                 print_warning("Exam web backup not found, skipping.")
 
-        # --- IMPORTANT: Restore exam config from its own backup (if exists) ---
+        # Restore exam config from its own backup (if exists)
         cfg_backup_exam = os.path.join(server_backup_exam, f"config-{SECONDARY_SERVER}.php")
         exam_config_target = exam_cfg['config_file']
-
-        # Ensure config directory exists
         os.makedirs(os.path.dirname(exam_config_target), exist_ok=True)
 
         if os.path.isfile(cfg_backup_exam):
@@ -1044,12 +1364,10 @@ def restore(restore_location, verbose):
                     print_verbose(f"Restored exam config from backup: {cfg_backup_exam} -> {exam_config_target}")
         else:
             print_warning(f"Exam config backup not found at {cfg_backup_exam}.")
-            # If the file still doesn't exist, create a dummy? Better to warn.
             if not os.path.exists(exam_config_target):
                 print_warning(f"Exam config file {exam_config_target} is missing; you will need to create it manually.")
-                # We'll still proceed but credentials will be missing.
 
-        # Now extract credentials from the exam config file (if it exists)
+        # Extract credentials from exam config
         db_user_exam = db_pass_exam = None
         if os.path.exists(exam_config_target):
             actual_dbname = get_dbname_from_config(exam_config_target)
@@ -1062,7 +1380,6 @@ def restore(restore_location, verbose):
 
             db_user_exam, db_pass_exam = get_dbuser_pass_from_config(exam_config_target)
 
-            # Copy to config.php (live)
             config_php_exam = os.path.join(os.path.dirname(exam_config_target), 'config.php')
             if handle_existing(SECONDARY_SERVER, 'config_live', config_php_exam, is_dir=False,
                                backup_dir=backup_root, policy=policy, verbose=verbose):
@@ -1116,8 +1433,8 @@ def restore(restore_location, verbose):
             print_warning("Exam database dump not found, skipping.")
 
         # Exam symlink
-        link_name_exam = os.path.join(WEB_PARENT, exam_cfg['symlink_name'])
-        link_target_exam = exam_cfg['symlink_target']
+        link_name_exam = os.path.join(WEB_PARENT, exam_info['symlink_name'])
+        link_target_exam = exam_info['symlink_target']
         if os.path.lexists(link_name_exam):
             os.unlink(link_name_exam)
         os.symlink(link_target_exam, link_name_exam)
@@ -1348,12 +1665,22 @@ def restore_previous(backup_dir, verbose):
             if verbose:
                 print_verbose(f"Removed temporary database auth file: {temp_auth_file}")
 
+def print_summary(operation, start_time, servers, file_counts, db_sizes):
+    elapsed = time.time() - start_time
+    print(f"\n{COLOR_BOLD}{COLOR_CYAN}═══ {operation.upper()} SUMMARY ═══{COLOR_RESET}")
+    for server in servers:
+        print(f"  {COLOR_BOLD}{server}{COLOR_RESET}")
+        print(f"    Web files: {file_counts[server]['web']}")
+        print(f"    Data files: {file_counts[server]['data']}")
+        print(f"    DB size: {db_sizes[server]}")
+    print(f"{COLOR_DIM}Total time: {elapsed:.2f}s{COLOR_RESET}")
+
 # ----------------------------------------------------------------------
 # Main CLI
 # ----------------------------------------------------------------------
 def main():
     parser = argparse.ArgumentParser(
-        description="Backup and restore Moodle servers (primary and exam)."
+        description="Backup, restore, upgrade, and manage Moodle servers (primary and exam)."
     )
     subparsers = parser.add_subparsers(dest='command', required=True, help='Subcommands')
 
@@ -1372,6 +1699,39 @@ def main():
     restore_parser.add_argument('-v', '--verbose', action='store_true',
                                 help='Print detailed progress')
 
+        # --- NEW: upgrade parser ---
+    upgrade_parser = subparsers.add_parser('upgrade', help='Upgrade Moodle')
+    upgrade_parser.add_argument('--server', choices=SERVERS.keys(), default=PRIMARY_SERVER,
+                                help='Which server to upgrade (default: primary)')
+    upgrade_parser.add_argument('--check', action='store_true',
+                                help='Only check if upgrade is needed, do not perform')
+    upgrade_parser.add_argument('-v', '--verbose', action='store_true')
+
+    # --- NEW: maintenance parser ---
+    maint_parser = subparsers.add_parser('maintenance', help='Manage maintenance mode')
+    maint_parser.add_argument('--enable', action='store_true', help='Enable maintenance mode')
+    maint_parser.add_argument('--disable', action='store_true', help='Disable maintenance mode')
+    maint_parser.add_argument('--status', action='store_true', help='Show current maintenance status')
+    maint_parser.add_argument('--allow-admins', dest='no_admins', action='store_false',
+                              help='Allow admins to log in (default)')
+    maint_parser.add_argument('--no-admins', dest='no_admins', action='store_true',
+                              help='Block even admins')
+    maint_parser.add_argument('--message', help='Custom maintenance message')
+    maint_parser.add_argument('--server', choices=SERVERS.keys(), default=PRIMARY_SERVER)
+    maint_parser.add_argument('-v', '--verbose', action='store_true')
+
+    # --- NEW: cron parser ---
+    cron_parser = subparsers.add_parser('cron', help='Run Moodle cron')
+    cron_parser.add_argument('--server', choices=SERVERS.keys(), default=PRIMARY_SERVER)
+    cron_parser.add_argument('--setup', help='Add cron to system crontab (e.g., "* * * * *")',
+                             nargs='?', const='* * * * *')
+    cron_parser.add_argument('-v', '--verbose', action='store_true')
+
+    # --- NEW: status parser ---
+    status_parser = subparsers.add_parser('status', help='Show Moodle status')
+    status_parser.add_argument('--server', choices=SERVERS.keys(), default=PRIMARY_SERVER)
+    status_parser.add_argument('-v', '--verbose', action='store_true')
+
     rp_parser = subparsers.add_parser('restore-previous', aliases=['rp'],
                                        help='Restore from a previous backup directory (created during a restore)')
     rp_parser.add_argument('-d', '--backup-dir',
@@ -1379,7 +1739,15 @@ def main():
     rp_parser.add_argument('-v', '--verbose', action='store_true',
                            help='Print detailed progress')
 
+    backup_parser.add_argument('--maintenance', action='store_true',
+                            help='Enable maintenance mode before backup and disable afterwards')
+    restore_parser.add_argument('--maintenance', action='store_true',
+                            help='Enable maintenance mode before restore and disable afterwards')
+
     args = parser.parse_args()
+    if args.verbose:
+        global _USE_COLOR
+        _USE_COLOR = True
 
     matrix_intro()
 
@@ -1389,6 +1757,38 @@ def main():
         restore(args.restore_location, args.verbose)
     elif args.command in ('restore-previous', 'rp'):
         restore_previous(args.backup_dir, args.verbose)
+    # --- NEW handlers ---
+    elif args.command == 'upgrade':
+        upgrade_moodle(args.server, args.check, args.verbose)
+    elif args.command == 'maintenance':
+        # Database credentials needed
+        auth_args, temp_auth_file = obtain_db_credentials(args.verbose)
+        try:
+            if args.status:
+                settings = get_maintenance_settings(args.server, auth_args, args.verbose)
+                # ... print status
+            elif args.enable:
+                set_config_value(args.server, 'maintenance_enabled', 1, auth_args, args.verbose)
+                allow = not getattr(args, 'no_admins', False)
+                set_config_value(args.server, 'maintenance_allow_admins', allow, auth_args, args.verbose)
+                if args.message:
+                    set_config_value(args.server, 'maintenance_message', args.message, auth_args, args.verbose)
+                print_success("Maintenance mode enabled.")
+            elif args.disable:
+                set_config_value(args.server, 'maintenance_enabled', 0, auth_args, args.verbose)
+                print_success("Maintenance mode disabled.")
+            else:
+                print_warning("Please specify --enable, --disable, or --status")
+        finally:
+            if temp_auth_file and os.path.exists(temp_auth_file):
+                os.unlink(temp_auth_file)
+    elif args.command == 'cron':
+        if args.setup:
+            setup_cron_job(args.server, args.setup, args.verbose)
+        else:
+            run_cron(args.server, args.verbose)
+    elif args.command == 'status':
+        show_status(args.server, args.verbose)
     else:
         parser.print_help()
         sys.exit(1)
