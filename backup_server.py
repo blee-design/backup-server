@@ -1241,13 +1241,17 @@ def restore(restore_location, verbose):
 
                 db_user, db_pass = get_dbuser_pass_from_config(cfg_target)
 
-                # Copy to config.php
+                # Copy to config.php (only if it's a different location)
                 config_php = os.path.join(os.path.dirname(cfg_target), 'config.php')
-                if handle_existing(PRIMARY_SERVER, 'config_live', config_php, is_dir=False,
-                                   backup_dir=backup_root, policy=policy, verbose=verbose):
-                    shutil.copy2(cfg_target, config_php)
+                if config_php != cfg_target:
+                    if handle_existing(PRIMARY_SERVER, 'config_live', config_php, is_dir=False,
+                                    backup_dir=backup_root, policy=policy, verbose=verbose):
+                        shutil.copy2(cfg_target, config_php)
+                        if verbose:
+                            print_verbose(f"Copied config to live file: {cfg_target} -> {config_php}")
+                else:
                     if verbose:
-                        print_verbose(f"Copied config to live file: {cfg_target} -> {config_php}")
+                        print_verbose("Config file and live config.php are the same; no separate copy needed.")
         else:
             print_warning(f"Config backup for primary not found at {cfg_backup}")
 
@@ -1381,11 +1385,15 @@ def restore(restore_location, verbose):
             db_user_exam, db_pass_exam = get_dbuser_pass_from_config(exam_config_target)
 
             config_php_exam = os.path.join(os.path.dirname(exam_config_target), 'config.php')
-            if handle_existing(SECONDARY_SERVER, 'config_live', config_php_exam, is_dir=False,
-                               backup_dir=backup_root, policy=policy, verbose=verbose):
-                shutil.copy2(exam_config_target, config_php_exam)
+            if config_php_exam != exam_config_target:
+                if handle_existing(SECONDARY_SERVER, 'config_live', config_php_exam, is_dir=False,
+                                backup_dir=backup_root, policy=policy, verbose=verbose):
+                    shutil.copy2(exam_config_target, config_php_exam)
+                    if verbose:
+                        print_verbose(f"Copied exam config to live file: {exam_config_target} -> {config_php_exam}")
+            else:
                 if verbose:
-                    print_verbose(f"Copied exam config to live file: {exam_config_target} -> {config_php_exam}")
+                    print_verbose("Exam config and live config.php are the same; no separate copy needed.")
         else:
             print_warning(f"Exam config file {exam_config_target} still missing. Database credentials will not be set automatically.")
 
