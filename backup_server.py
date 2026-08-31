@@ -1223,36 +1223,36 @@ def restore(restore_location, verbose):
         cfg_target = primary_cfg['config_file']
         db_user = db_pass = None
         if os.path.isfile(cfg_backup):
-        if handle_existing(PRIMARY_SERVER, 'config', cfg_target, is_dir=False,
-                        backup_dir=backup_root, policy=policy, verbose=verbose):
-            os.makedirs(os.path.dirname(cfg_target), exist_ok=True)
-            # COPY instead of MOVE – keep the backup file in the temp directory
-            shutil.copy2(cfg_backup, cfg_target)
-            if verbose:
-                print_verbose(f"Restored config: {cfg_backup} -> {cfg_target}")
-
-            # Extract credentials from the restored file (now at cfg_target)
-            actual_dbname = get_dbname_from_config(cfg_target)
-            if actual_dbname:
+            if handle_existing(PRIMARY_SERVER, 'config', cfg_target, is_dir=False,
+                            backup_dir=backup_root, policy=policy, verbose=verbose):
+                os.makedirs(os.path.dirname(cfg_target), exist_ok=True)
+                # COPY instead of MOVE – keep the backup file in the temp directory
+                shutil.copy2(cfg_backup, cfg_target)
                 if verbose:
-                    print_verbose(f"Extracted database name from config: {actual_dbname} (was {primary_cfg['db_name']})")
-                primary_cfg['db_name'] = actual_dbname
-            else:
-                print_warning(f"Could not extract database name from {cfg_target}, using hardcoded value: {primary_cfg['db_name']}")
+                    print_verbose(f"Restored config: {cfg_backup} -> {cfg_target}")
 
-            db_user, db_pass = get_dbuser_pass_from_config(cfg_target)
-
-            # Live config copy – only if it's a different location
-            config_php = os.path.join(os.path.dirname(cfg_target), 'config.php')
-            if config_php != cfg_target:
-                if handle_existing(PRIMARY_SERVER, 'config_live', config_php, is_dir=False,
-                                backup_dir=backup_root, policy=policy, verbose=verbose):
-                    shutil.copy2(cfg_target, config_php)
+                # Extract credentials from the restored file (now at cfg_target)
+                actual_dbname = get_dbname_from_config(cfg_target)
+                if actual_dbname:
                     if verbose:
-                        print_verbose(f"Copied config to live file: {cfg_target} -> {config_php}")
-            else:
-                if verbose:
-                    print_verbose("Config file and live config.php are the same; no separate copy needed.")
+                        print_verbose(f"Extracted database name from config: {actual_dbname} (was {primary_cfg['db_name']})")
+                    primary_cfg['db_name'] = actual_dbname
+                else:
+                    print_warning(f"Could not extract database name from {cfg_target}, using hardcoded value: {primary_cfg['db_name']}")
+
+                db_user, db_pass = get_dbuser_pass_from_config(cfg_target)
+
+                # Live config copy – only if it's a different location
+                config_php = os.path.join(os.path.dirname(cfg_target), 'config.php')
+                if config_php != cfg_target:
+                    if handle_existing(PRIMARY_SERVER, 'config_live', config_php, is_dir=False,
+                                    backup_dir=backup_root, policy=policy, verbose=verbose):
+                        shutil.copy2(cfg_target, config_php)
+                        if verbose:
+                            print_verbose(f"Copied config to live file: {cfg_target} -> {config_php}")
+                else:
+                    if verbose:
+                        print_verbose("Config file and live config.php are the same; no separate copy needed.")
         else:
             print_warning(f"Config backup for primary not found at {cfg_backup}")
 
@@ -1362,35 +1362,35 @@ def restore(restore_location, verbose):
         os.makedirs(os.path.dirname(exam_config_target), exist_ok=True)
 
         if os.path.isfile(cfg_backup_exam):
-        if handle_existing(SECONDARY_SERVER, 'config', exam_config_target, is_dir=False,
-                        backup_dir=backup_root, policy=policy, verbose=verbose):
-            os.makedirs(os.path.dirname(exam_config_target), exist_ok=True)
-            # COPY instead of MOVE
-            shutil.copy2(cfg_backup_exam, exam_config_target)
-            if verbose:
-                print_verbose(f"Restored exam config from backup: {cfg_backup_exam} -> {exam_config_target}")
-
-        # Extract credentials from the restored exam config
-        actual_dbname = get_dbname_from_config(exam_config_target)
-        if actual_dbname:
-            if verbose:
-                print_verbose(f"Extracted database name from exam config: {actual_dbname} (was {exam_cfg['db_name']})")
-            exam_cfg['db_name'] = actual_dbname
-        else:
-            print_warning(f"Could not extract database name from {exam_config_target}, using hardcoded value: {exam_cfg['db_name']}")
-
-        db_user_exam, db_pass_exam = get_dbuser_pass_from_config(exam_config_target)
-
-        config_php_exam = os.path.join(os.path.dirname(exam_config_target), 'config.php')
-        if config_php_exam != exam_config_target:
-            if handle_existing(SECONDARY_SERVER, 'config_live', config_php_exam, is_dir=False,
+            if handle_existing(SECONDARY_SERVER, 'config', exam_config_target, is_dir=False,
                             backup_dir=backup_root, policy=policy, verbose=verbose):
-                shutil.copy2(exam_config_target, config_php_exam)
+                os.makedirs(os.path.dirname(exam_config_target), exist_ok=True)
+                # COPY instead of MOVE
+                shutil.copy2(cfg_backup_exam, exam_config_target)
                 if verbose:
-                    print_verbose(f"Copied exam config to live file: {exam_config_target} -> {config_php_exam}")
-        else:
-            if verbose:
-                print_verbose("Exam config and live config.php are the same; no separate copy needed.")
+                    print_verbose(f"Restored exam config from backup: {cfg_backup_exam} -> {exam_config_target}")
+
+            # Extract credentials from the restored exam config
+            actual_dbname = get_dbname_from_config(exam_config_target)
+            if actual_dbname:
+                if verbose:
+                    print_verbose(f"Extracted database name from exam config: {actual_dbname} (was {exam_cfg['db_name']})")
+                exam_cfg['db_name'] = actual_dbname
+            else:
+                print_warning(f"Could not extract database name from {exam_config_target}, using hardcoded value: {exam_cfg['db_name']}")
+
+            db_user_exam, db_pass_exam = get_dbuser_pass_from_config(exam_config_target)
+
+            config_php_exam = os.path.join(os.path.dirname(exam_config_target), 'config.php')
+            if config_php_exam != exam_config_target:
+                if handle_existing(SECONDARY_SERVER, 'config_live', config_php_exam, is_dir=False,
+                                backup_dir=backup_root, policy=policy, verbose=verbose):
+                    shutil.copy2(exam_config_target, config_php_exam)
+                    if verbose:
+                        print_verbose(f"Copied exam config to live file: {exam_config_target} -> {config_php_exam}")
+            else:
+                if verbose:
+                    print_verbose("Exam config and live config.php are the same; no separate copy needed.")
         else:
             print_warning(f"Exam config file {exam_config_target} still missing. Database credentials will not be set automatically.")
 
