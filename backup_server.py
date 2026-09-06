@@ -497,7 +497,8 @@ def handle_existing_database(db_name, auth_args, backup_dir, server_name, policy
         return True
 
 def get_table_prefix(server_name):
-    config_file = SERVERS[server_name]['config_file']
+    cfg = load_server_config(server_name)
+    return cfg['table_prefix']
     if not os.path.isfile(config_file):
         return 'mdl_'  # fallback
     with open(config_file, 'r') as f:
@@ -509,7 +510,9 @@ def get_table_prefix(server_name):
 
 def set_config_value(server_name, config_name, value, auth_args, verbose=False):
     prefix = get_table_prefix(server_name)
-    db_name = SERVERS[server_name]['db_name']
+    cfg = load_server_config(server_name)
+    db_name = cfg['db_name']
+    prefix = cfg['table_prefix']
     client = get_db_client()
     # Convert value to appropriate SQL type
     if isinstance(value, bool):
@@ -528,8 +531,9 @@ def set_config_value(server_name, config_name, value, auth_args, verbose=False):
     run_cmd(cmd, verbose)
 
 def get_maintenance_settings(server_name, auth_args, verbose=False):
-    prefix = get_table_prefix(server_name)
-    db_name = SERVERS[server_name]['db_name']
+    cfg = load_server_config(server_name)
+    prefix = cfg['table_prefix']
+    db_name = cfg['db_name']
     client = get_db_client()
     # Query relevant config values
     sql = f"SELECT name, value FROM {prefix}config WHERE name IN ('maintenance_enabled', 'maintenance_message', 'maintenance_allow_admins')"
@@ -621,7 +625,8 @@ def grant_database_privileges(db_name, db_user, db_pass, auth_args, verbose=Fals
 
 def get_moodle_root(server_name):
     """Return the full path to the Moodle web root for a given server."""
-    return SERVERS[server_name]['web_root']
+    cfg = load_server_config(server_name)
+    return cfg['web_root']
 
 def run_moodle_cli(server_name, script, args=None, verbose=False):
     """
